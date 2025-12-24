@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Tracker Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="header-left">
+                <img src="logo.png" alt="Logo" class="logo">
+                <h1>Project Tracker</h1>
+            </div>
+            <button class="btn-primary" onclick="openModal()">+ New Project</button>
+        </header>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div class="filter-group">
+                <label>Status:</label>
+                <select id="statusFilter" onchange="filterProjects()">
+                    <option value="all">All Statuses</option>
+                    <option value="Not Started">Not Started</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="On Hold">On Hold</option>
+                    <option value="Completed">Completed</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Priority:</label>
+                <select id="priorityFilter" onchange="filterProjects()">
+                    <option value="all">All Priorities</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Search:</label>
+                <input type="text" id="searchInput" placeholder="Search projects..." onkeyup="filterProjects()">
+            </div>
+        </div>
+
+        <!-- Project Cards Grid -->
+        <div id="projectsGrid" class="projects-grid">
+            <!-- Projects will be loaded here -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="empty-state" style="display: none;">
+            <p>No projects yet. Create your first project to get started!</p>
+            <button class="btn-primary" onclick="openModal()">+ Create Project</button>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="projectModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">New Project</h2>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            <form id="projectForm" onsubmit="saveProject(event)">
+                <input type="hidden" id="projectId">
+                
+                <div class="form-group">
+                    <label>Project Name *</label>
+                    <input type="text" id="projectName" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Week *</label>
+                        <input type="number" id="startWeek" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Total Weeks *</label>
+                        <input type="number" id="totalWeeks" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Current Week</label>
+                        <input type="number" id="currentWeek" min="1">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Status *</label>
+                        <select id="status" required>
+                            <option value="Not Started">Not Started</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="On Hold">On Hold</option>
+                            <option value="Completed">Completed</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Priority *</label>
+                        <select id="priority" required>
+                            <option value="High">High</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="Low">Low</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Team Members</label>
+                    <input type="text" id="teamMembers" placeholder="John, Sarah, Mike...">
+                    <small>Separate names with commas</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Notes / Comments</label>
+                    <textarea id="notes" rows="4"></textarea>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let allProjects = [];
+
+        // Load projects on page load
+        window.onload = () => {
+            loadProjects();
+        };
+
+        // Load all projects
+        async function loadProjects() {
+            try {
+                const response = await fetch('/api/projects');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                // Make sure we have an array
+                allProjects = Array.isArray(data) ? data : [];
+                renderProjects(allProjects);
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                allProjects = [];
+                renderProjects([]);
+            }
+        }
+
+        // Render projects
+        function renderProjects(projects) {
+            const grid = document.getElementById('projectsGrid');
+            const emptyState = document.getElementById('emptyState');
+
+            if (projects.length === 0) {
+                grid.style.display = 'none';
+                emptyState.style.display = 'flex';
+                return;
+            }
+
+            grid.style.display = 'grid';
+            emptyState.style.display = 'none';
+
+            grid.innerHTML = projects.map(project => {
+                const progress = ((project.current_week / project.total_weeks) * 100).toFixed(0);
+                const weeksRemaining = project.total_weeks - project.current_week;
+                const urgency = weeksRemaining <= 2 ? 'urgent' : weeksRemaining <= 4 ? 'warning' : '';
+                
+                return `
+                    <div class="project-card ${urgency}">
+                        <div class="card-header">
+                            <h3>${project.name}</h3>
+                            <div class="card-actions">
+                                <button class="icon-btn" onclick="editProject(${project.id})" title="Edit">✏️</button>
+                                <button class="icon-btn" onclick="deleteProject(${project.id})" title="Delete">🗑️</button>
+                            </div>
+                        </div>
+
+                        <div class="timeline-info">
+                            <span class="timeline-text">Week ${project.current_week} of ${project.total_weeks}</span>
+                            ${urgency ? `<span class="urgency-badge">${weeksRemaining} weeks left!</span>` : ''}
+                        </div>
+
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${progress}%"></div>
+                            <span class="progress-text">${progress}%</span>
+                        </div>
+
+                        <div class="card-details">
+                            <div class="detail-row">
+                                <span class="status-badge status-${project.status.toLowerCase().replace(' ', '-')}">${project.status}</span>
+                                <span class="priority-badge priority-${project.priority.toLowerCase()}">${project.priority}</span>
+                            </div>
+
+                            ${project.team_members ? `
+                                <div class="detail-row">
+                                    <strong>Team:</strong> <span>${project.team_members}</span>
+                                </div>
+                            ` : ''}
+
+                            ${project.notes ? `
+                                <div class="notes">
+                                    <strong>Notes:</strong>
+                                    <p>${project.notes}</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Filter projects
+        function filterProjects() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const priorityFilter = document.getElementById('priorityFilter').value;
+            const searchText = document.getElementById('searchInput').value.toLowerCase();
+
+            const filtered = allProjects.filter(project => {
+                const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
+                const matchesPriority = priorityFilter === 'all' || project.priority === priorityFilter;
+                const matchesSearch = project.name.toLowerCase().includes(searchText) || 
+                                     (project.notes && project.notes.toLowerCase().includes(searchText)) ||
+                                     (project.team_members && project.team_members.toLowerCase().includes(searchText));
+                
+                return matchesStatus && matchesPriority && matchesSearch;
+            });
+
+            renderProjects(filtered);
+        }
+
+        // Open modal
+        function openModal(project = null) {
+            const modal = document.getElementById('projectModal');
+            const form = document.getElementById('projectForm');
+            const modalTitle = document.getElementById('modalTitle');
+
+            if (project) {
+                modalTitle.textContent = 'Edit Project';
+                document.getElementById('projectId').value = project.id;
+                document.getElementById('projectName').value = project.name;
+                document.getElementById('startWeek').value = project.start_week;
+                document.getElementById('totalWeeks').value = project.total_weeks;
+                document.getElementById('currentWeek').value = project.current_week;
+                document.getElementById('status').value = project.status;
+                document.getElementById('priority').value = project.priority;
+                document.getElementById('teamMembers').value = project.team_members || '';
+                document.getElementById('notes').value = project.notes || '';
+            } else {
+                modalTitle.textContent = 'New Project';
+                form.reset();
+                document.getElementById('projectId').value = '';
+                document.getElementById('currentWeek').value = 1;
+            }
+
+            modal.style.display = 'block';
+        }
+
+        // Close modal
+        function closeModal() {
+            document.getElementById('projectModal').style.display = 'none';
+            document.getElementById('projectForm').reset();
+        }
+
+        // Save project
+        async function saveProject(event) {
+            event.preventDefault();
+
+            const projectId = document.getElementById('projectId').value;
+            const projectData = {
+                name: document.getElementById('projectName').value,
+                start_week: parseInt(document.getElementById('startWeek').value),
+                total_weeks: parseInt(document.getElementById('totalWeeks').value),
+                current_week: parseInt(document.getElementById('currentWeek').value) || parseInt(document.getElementById('startWeek').value),
+                status: document.getElementById('status').value,
+                priority: document.getElementById('priority').value,
+                team_members: document.getElementById('teamMembers').value,
+                notes: document.getElementById('notes').value
+            };
+
+            console.log('Saving project:', projectData);
+
+            try {
+                const url = projectId ? `/api/projects/${projectId}` : '/api/projects';
+                const method = projectId ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(projectData)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to save project');
+                }
+
+                const result = await response.json();
+                console.log('Project saved:', result);
+                
+                closeModal();
+                await loadProjects();
+            } catch (error) {
+                console.error('Error saving project:', error);
+                alert(`Error saving project: ${error.message}`);
+            }
+        }
+
+        // Edit project
+        function editProject(id) {
+            const project = allProjects.find(p => p.id === id);
+            if (project) {
+                openModal(project);
+            }
+        }
+
+        // Delete project
+        async function deleteProject(id) {
+            if (!confirm('Are you sure you want to delete this project?')) return;
+
+            try {
+                const response = await fetch(`/api/projects/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadProjects();
+                }
+            } catch (error) {
+                console.error('Error deleting project:', error);
+                alert('Error deleting project. Please try again.');
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('projectModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>
